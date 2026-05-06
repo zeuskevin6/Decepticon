@@ -13,19 +13,21 @@ class Reporter:
     Layout per run (always the same shape, single or batch):
 
       results/
-        <challenge_id>/                  ← one directory per challenge, persistent
-          <UTC_timestamp>.json           ← full ChallengeResult for THIS run
-          <UTC_timestamp>.md             ← human-readable evidence for THIS run
-          (one pair per execution; never overwrites)
-        batch-<UTC_timestamp>/           ← one directory per Reporter instance
-          report.json                    ← BenchmarkReport aggregate
-          report.md                      ← markdown table aggregate
-          index.json                     ← cross-reference of per-challenge paths
+        <challenge_id>/                       ← one directory per challenge, persistent
+          <UTC_timestamp>/                    ← one wrapper per execution
+            report.json                       ← full ChallengeResult for THIS run
+            report.md                         ← human-readable evidence for THIS run
+            evidence/summary.{json,md}        ← legacy-format aliases
+          (subdirs accumulate; never overwrites)
+        batch-<UTC_timestamp>/                ← one directory per Reporter instance
+          report.json                         ← BenchmarkReport aggregate
+          report.md                           ← markdown table aggregate
+          index.json                          ← cross-reference of per-challenge paths
 
-    Re-running the same challenge id appends a new ``<UTC_timestamp>.{json,md}``
-    pair under ``results/<id>/``; the prior runs stay intact so the loop's
-    Observer can compare across cycles. The batch directory snapshots the
-    aggregate for the run that produced these files.
+    Re-running the same challenge id appends a new ``<UTC_timestamp>/``
+    sub-directory under ``results/<id>/``; the prior runs stay intact so
+    the loop's Observer can compare across cycles. The batch directory
+    snapshots the aggregate for the run that produced these files.
 
     The timestamp is fixed at Reporter construction and shared across
     write_json / write_markdown / write_evidence so all artifacts produced by
@@ -111,17 +113,21 @@ class Reporter:
     def write_evidence(self, report: BenchmarkReport) -> Path:
         """Write per-challenge evidence files and the batch index.
 
-        Per-challenge files: ``results/<challenge_id>/<UTC_timestamp>.{json,md}``
-          - JSON: the full ChallengeResult model dump (preserves trace_id,
+        Per-challenge files: ``results/<challenge_id>/<UTC_timestamp>/{report.json,
+        report.md, evidence/summary.{json,md}}``
+          - report.json: the full ChallengeResult model dump (preserves trace_id,
             token_count, cancel_outcome, terminal_status_at_teardown — i.e.
             everything the Observer needs to map a result to its LangSmith
             trace and infrastructure outcome).
-          - MD: human-readable evidence card.
+          - report.md: human-readable evidence card.
+          - evidence/summary.{json,md}: legacy-format aliases of the same
+            payload, kept so existing tools continue to find the file they
+            grep for.
 
         Batch index: ``results/batch-<UTC_timestamp>/index.json`` — provider
         metadata plus a list of ``{id, name, level, passed, duration_seconds,
         trace_id, evidence_path}`` so consumers can navigate from the batch
-        aggregate to each per-challenge file without scanning the directory.
+        aggregate to each per-challenge directory without scanning.
 
         Returns the batch directory path.
         """
@@ -147,7 +153,7 @@ class Reporter:
                     "trace_id": r.trace_id,
                     "token_count": r.token_count,
                     "evidence_path": str(
-                        self._challenge_dir(r.challenge_id) / f"{self._timestamp}.json"
+                        self._challenge_dir(r.challenge_id) / self._timestamp / "report.json"
                     ),
                 }
                 for r in report.results
@@ -161,16 +167,27 @@ class Reporter:
     def _write_challenge_evidence(
         self, challenge_dir: Path, result: ChallengeResult, *, stem: str
     ) -> None:
-        """Write JSON + Markdown for one challenge under ``<challenge_dir>/<stem>.{json,md}``.
+        """Write per-run snapshot under ``<challenge_dir>/<stem>/``.
 
-        The JSON dump is the FULL ChallengeResult (not a hand-picked subset)
-        so newly added fields surface automatically without reporter changes.
+        Layout mirrors the legacy Level-3 directory shape (`report.json`,
+        `report.md`, `evidence/summary.{json,md}`) so consumers used to
+        the L3 format work unchanged. The timestamp lives in the wrapper
+        directory name (`stem`) so re-runs of the same challenge accumulate
+        side-by-side instead of overwriting.
+
+        ``report.json`` is the FULL ChallengeResult model dump (so newly
+        added fields surface automatically without reporter changes).
+        ``evidence/summary.json`` carries the same payload — kept as a
+        legacy alias so older tooling that grepped for it still works.
         """
-        json_path = challenge_dir / f"{stem}.json"
-        json_path.write_text(
-            json.dumps(result.model_dump(mode="json"), indent=2, default=str),
-            encoding="utf-8",
-        )
+        run_dir = challenge_dir / stem
+        run_dir.mkdir(parents=True, exist_ok=True)
+        evidence_dir = run_dir / "evidence"
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+
+        payload = json.dumps(result.model_dump(mode="json"), indent=2, default=str)
+        (run_dir / "report.json").write_text(payload, encoding="utf-8")
+        (evidence_dir / "summary.json").write_text(payload, encoding="utf-8")
 
         lines = [
             f"# {result.challenge_id}: {result.challenge_name}",
@@ -196,5 +213,6 @@ class Reporter:
             lines.extend(["", "## Agent Summary", "", result.agent_summary])
         lines.append("")
 
-        md_path = challenge_dir / f"{stem}.md"
-        md_path.write_text("\n".join(lines), encoding="utf-8")
+        md_text = "\n".join(lines)
+        (run_dir / "report.md").write_text(md_text, encoding="utf-8")
+        (evidence_dir / "summary.md").write_text(md_text, encoding="utf-8")
