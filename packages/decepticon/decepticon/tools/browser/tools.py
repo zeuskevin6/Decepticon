@@ -123,9 +123,7 @@ class BrowserSessionManager:
 
     def _active_tab(self) -> _Tab:
         if self._active is None or self._active not in self._tabs:
-            raise BrowserActionError(
-                "No active tab. Call browser_action(action='launch') first."
-            )
+            raise BrowserActionError("No active tab. Call browser_action(action='launch') first.")
         return self._tabs[self._active]
 
     async def goto(self, url: str, timeout_ms: int = 30000) -> dict[str, Any]:
@@ -157,9 +155,7 @@ class BrowserSessionManager:
     async def scroll(self, dx: int = 0, dy: int = 0) -> dict[str, Any]:
         async with self._lock:
             tab = self._active_tab()
-            await tab.page.evaluate(
-                "([dx, dy]) => window.scrollBy(dx, dy)", [dx, dy]
-            )
+            await tab.page.evaluate("([dx, dy]) => window.scrollBy(dx, dy)", [dx, dy])
             return {"scrolled": {"dx": dx, "dy": dy}, "url": tab.page.url}
 
     async def screenshot(self, full_page: bool = False) -> dict[str, Any]:
@@ -294,9 +290,7 @@ async def _dispatch(action: str, kwargs: dict[str, Any]) -> dict[str, Any]:
             timeout_ms=int(kwargs.get("timeout_ms", 15000)),
         )
     if action == "scroll":
-        return await mgr.scroll(
-            dx=int(kwargs.get("dx", 0)), dy=int(kwargs.get("dy", 0))
-        )
+        return await mgr.scroll(dx=int(kwargs.get("dx", 0)), dy=int(kwargs.get("dy", 0)))
     if action == "screenshot":
         return await mgr.screenshot(full_page=bool(kwargs.get("full_page", False)))
     if action == "eval_js":

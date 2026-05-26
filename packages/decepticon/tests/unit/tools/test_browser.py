@@ -87,17 +87,13 @@ def test_dispatcher_rejects_unknown_action() -> None:
 
 
 def test_dispatcher_rejects_bad_params_json() -> None:
-    out = asyncio.run(
-        browser_action.ainvoke({"action": "launch", "params_json": "{not json"})
-    )
+    out = asyncio.run(browser_action.ainvoke({"action": "launch", "params_json": "{not json"}))
     parsed = json.loads(out)
     assert "not valid JSON" in parsed["error"]
 
 
 def test_dispatcher_rejects_non_object_params() -> None:
-    out = asyncio.run(
-        browser_action.ainvoke({"action": "launch", "params_json": "[1, 2]"})
-    )
+    out = asyncio.run(browser_action.ainvoke({"action": "launch", "params_json": "[1, 2]"}))
     parsed = json.loads(out)
     assert "must decode to a JSON object" in parsed["error"]
 
@@ -106,9 +102,7 @@ def test_missing_required_parameter_surfaces_as_error_json() -> None:
     api, _, _ = _fake_browser_chain()
     with patch.object(BrowserSessionManager, "_import_playwright", return_value=api):
         asyncio.run(browser_action.ainvoke({"action": "launch", "params_json": "{}"}))
-        out = asyncio.run(
-            browser_action.ainvoke({"action": "goto", "params_json": "{}"})
-        )
+        out = asyncio.run(browser_action.ainvoke({"action": "goto", "params_json": "{}"}))
     parsed = json.loads(out)
     assert "missing required parameter" in parsed["error"]
 
@@ -119,9 +113,7 @@ def test_missing_playwright_surfaces_install_hint() -> None:
             "Playwright is not installed. Add the 'browser' extra or install playwright + chromium in the sandbox image."
         )
 
-    with patch.object(
-        BrowserSessionManager, "_import_playwright", side_effect=lambda: _raise()
-    ):
+    with patch.object(BrowserSessionManager, "_import_playwright", side_effect=lambda: _raise()):
         out = asyncio.run(browser_action.ainvoke({"action": "launch", "params_json": "{}"}))
     parsed = json.loads(out)
     assert "Playwright is not installed" in parsed["error"]
@@ -182,9 +174,7 @@ def test_type_invokes_page_fill() -> None:
             browser_action.ainvoke(
                 {
                     "action": "type",
-                    "params_json": json.dumps(
-                        {"selector": "input[name=user]", "text": "admin"}
-                    ),
+                    "params_json": json.dumps({"selector": "input[name=user]", "text": "admin"}),
                 }
             )
         )
@@ -199,9 +189,7 @@ def test_screenshot_returns_base64_png() -> None:
     api, _, _ = _fake_browser_chain(pages=[page])
     with patch.object(BrowserSessionManager, "_import_playwright", return_value=api):
         asyncio.run(browser_action.ainvoke({"action": "launch", "params_json": "{}"}))
-        out = asyncio.run(
-            browser_action.ainvoke({"action": "screenshot", "params_json": "{}"})
-        )
+        out = asyncio.run(browser_action.ainvoke({"action": "screenshot", "params_json": "{}"}))
     parsed = json.loads(out)
     assert parsed["format"] == "png"
     assert parsed["bytes"] == len(b"PNGDATA")
@@ -233,9 +221,7 @@ def test_console_logs_returns_captured_messages() -> None:
         for _event, fn in handlers:
             fn(MagicMock(type="log", text="hello"))
             fn(MagicMock(type="error", text="boom"))
-        out = asyncio.run(
-            browser_action.ainvoke({"action": "console_logs", "params_json": "{}"})
-        )
+        out = asyncio.run(browser_action.ainvoke({"action": "console_logs", "params_json": "{}"}))
     parsed = json.loads(out)
     assert parsed["count"] == 2
     assert any("hello" in line for line in parsed["lines"])
@@ -247,9 +233,7 @@ def test_page_source_returns_html_and_url() -> None:
     api, _, _ = _fake_browser_chain(pages=[page])
     with patch.object(BrowserSessionManager, "_import_playwright", return_value=api):
         asyncio.run(browser_action.ainvoke({"action": "launch", "params_json": "{}"}))
-        out = asyncio.run(
-            browser_action.ainvoke({"action": "page_source", "params_json": "{}"})
-        )
+        out = asyncio.run(browser_action.ainvoke({"action": "page_source", "params_json": "{}"}))
     parsed = json.loads(out)
     assert parsed["url"] == "https://target/"
     assert parsed["html"].startswith("<html>")
@@ -266,9 +250,7 @@ def test_list_tabs_and_switch_tab() -> None:
                 {"action": "switch_tab", "params_json": json.dumps({"tab_id": "second"})}
             )
         )
-        out = asyncio.run(
-            browser_action.ainvoke({"action": "list_tabs", "params_json": "{}"})
-        )
+        out = asyncio.run(browser_action.ainvoke({"action": "list_tabs", "params_json": "{}"}))
     parsed = json.loads(out)
     assert "main" in parsed["tabs"]
     assert "second" in parsed["tabs"]
@@ -280,9 +262,7 @@ def test_close_resets_session_state() -> None:
     api, _, context = _fake_browser_chain(pages=[page])
     with patch.object(BrowserSessionManager, "_import_playwright", return_value=api):
         asyncio.run(browser_action.ainvoke({"action": "launch", "params_json": "{}"}))
-        out = asyncio.run(
-            browser_action.ainvoke({"action": "close", "params_json": "{}"})
-        )
+        out = asyncio.run(browser_action.ainvoke({"action": "close", "params_json": "{}"}))
     parsed = json.loads(out)
     assert parsed["closed"] is True
 
@@ -294,9 +274,7 @@ def test_browser_tools_export() -> None:
 
 def test_active_tab_required_for_navigation() -> None:
     out = asyncio.run(
-        browser_action.ainvoke(
-            {"action": "goto", "params_json": json.dumps({"url": "https://x/"})}
-        )
+        browser_action.ainvoke({"action": "goto", "params_json": json.dumps({"url": "https://x/"})})
     )
     parsed = json.loads(out)
     assert "active tab" in parsed["error"].lower()
