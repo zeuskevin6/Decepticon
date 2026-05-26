@@ -41,6 +41,11 @@ def _parent_span_id(span: ReadableSpan) -> int:
     return span.parent.span_id
 
 
+def _span_id(span: ReadableSpan) -> int:
+    assert span.context is not None, f"{span.name} has no context"
+    return span.context.span_id
+
+
 from decepticon.telemetry import otel as otel_module  # noqa: E402
 from decepticon.telemetry.otel import (  # noqa: E402
     record_llm_cost,
@@ -102,9 +107,9 @@ def test_engagement_agent_tool_llm_hierarchy(memory_exporter: InMemorySpanExport
     agent = spans["decepticon.agent_run"]
     tool = spans["decepticon.tool_call"]
     llm = spans["decepticon.llm_call"]
-    assert _parent_span_id(agent) == engagement.context.span_id
-    assert _parent_span_id(tool) == agent.context.span_id
-    assert _parent_span_id(llm) == agent.context.span_id
+    assert _parent_span_id(agent) == _span_id(engagement)
+    assert _parent_span_id(tool) == _span_id(agent)
+    assert _parent_span_id(llm) == _span_id(agent)
 
 
 def test_attributes_are_set(memory_exporter: InMemorySpanExporter) -> None:
