@@ -37,12 +37,6 @@ from typing import Any
 log = logging.getLogger("decepticon.runtime.event_log")
 
 
-if sys.platform == "win32":
-    import msvcrt
-else:
-    import fcntl
-
-
 class EventType(str, Enum):
     """All engagement event types the orchestrator may emit."""
 
@@ -116,6 +110,8 @@ def _engagement_events_path(workspace_root: Path, engagement_id: str) -> Path:
 
 def _acquire_lock(fd: int) -> None:
     if sys.platform == "win32":
+        import msvcrt
+
         while True:
             try:
                 msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
@@ -123,16 +119,22 @@ def _acquire_lock(fd: int) -> None:
             except OSError:
                 time.sleep(0.01)
     else:
+        import fcntl
+
         fcntl.flock(fd, fcntl.LOCK_EX)
 
 
 def _release_lock(fd: int) -> None:
     if sys.platform == "win32":
+        import msvcrt
+
         try:
             msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         except OSError:
             pass
     else:
+        import fcntl
+
         fcntl.flock(fd, fcntl.LOCK_UN)
 
 
