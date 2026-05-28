@@ -12,13 +12,23 @@ jobs:
   decepticon-scan:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    if: ${{ vars.ENABLE_DECEPTICON_SCAN == 'true' && secrets.ANTHROPIC_API_KEY != '' }}
+    if: ${{ vars.ENABLE_DECEPTICON_SCAN == 'true' }}
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
+      - name: Verify API key configured
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "ANTHROPIC_API_KEY secret not set; skipping scan."
+            exit 0
+          fi
+
       - name: Decepticon scan
+        if: ${{ env.ANTHROPIC_API_KEY != '' }}
         uses: ./.github/actions/decepticon-scan
         with:
           target: "./"
