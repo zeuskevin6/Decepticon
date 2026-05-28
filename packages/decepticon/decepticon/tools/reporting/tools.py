@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from langchain_core.tools import tool
@@ -10,6 +11,7 @@ from langchain_core.tools import tool
 from decepticon.tools.reporting.bugcrowd import render_bugcrowd_csv
 from decepticon.tools.reporting.executive import render_executive_summary
 from decepticon.tools.reporting.hackerone import render_hackerone_markdown
+from decepticon.tools.reporting.sarif import render_sarif
 from decepticon.tools.reporting.timeline import extract_timeline
 from decepticon.tools.research._state import _load
 
@@ -53,4 +55,35 @@ def report_timeline() -> str:
     return _json({"count": len(events), "events": [e.to_dict() for e in events]})
 
 
-REPORTING_TOOLS = [report_hackerone, report_bugcrowd_csv, report_executive, report_timeline]
+@tool
+def report_sarif(engagement_id: str, output_path: str) -> str:
+    """Render the engagement graph as SARIF v2.1.0 JSON for GitHub code scanning / DefectDojo / SARIF aggregators.
+
+    Writes UTF-8 to ``output_path`` (parent directories are created) and
+    returns a JSON summary with the engagement id, written path, byte
+    count, and number of result entries emitted.
+    """
+    graph, _ = _load()
+    sarif = render_sarif(graph, engagement_id=engagement_id)
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(sarif, encoding="utf-8")
+    payload = json.loads(sarif)
+    results = payload["runs"][0]["results"]
+    return _json(
+        {
+            "engagement_id": engagement_id,
+            "path": str(path),
+            "bytes": len(sarif.encode("utf-8")),
+            "results": len(results),
+        }
+    )
+
+
+REPORTING_TOOLS = [
+    report_hackerone,
+    report_bugcrowd_csv,
+    report_executive,
+    report_timeline,
+    report_sarif,
+]
