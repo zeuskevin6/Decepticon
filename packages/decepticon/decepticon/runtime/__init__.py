@@ -1,6 +1,6 @@
 """Runtime infrastructure for the Decepticon orchestrator process.
 
-Each runtime module (event log, graceful shutdown, future resume, ...)
+Each runtime module (event log, graceful shutdown, recording, CART, ...)
 ships in its own PR. This package init imports every known module
 best-effort so each PR can land in any order without colliding on
 this file.
@@ -18,7 +18,6 @@ try:
 
     _exports += ["EngagementEvent", "EventLog", "EventType", "read_events"]
 except ImportError:
-    # event log module not present — another runtime PR may be mid-merge
     pass
 
 try:
@@ -29,7 +28,54 @@ try:
 
     _exports += ["LangGraphState", "install_shutdown_handlers"]
 except ImportError:
-    # shutdown module not present — another runtime PR may be mid-merge
+    pass
+
+try:
+    from decepticon.runtime.recording import (  # noqa: F401
+        RecordingMiddleware,
+        ReplayMiddleware,
+        ReplayMismatchError,
+        open_record,
+        open_replay,
+    )
+
+    _exports += [
+        "RecordingMiddleware",
+        "ReplayMiddleware",
+        "ReplayMismatchError",
+        "open_record",
+        "open_replay",
+    ]
+except ImportError:
+    pass
+
+try:
+    from decepticon.runtime.cart import (  # noqa: F401
+        ChangeEvent,
+        EngagementSnapshot,
+        LinearOPPLANAdapter,
+        OPPLANAdapter,
+        ReplayPlan,
+        ReplayRunner,
+        SnapshotDelta,
+        SnapshotNodeKey,
+        Watcher,
+        diff_snapshots,
+    )
+
+    _exports += [
+        "ChangeEvent",
+        "EngagementSnapshot",
+        "LinearOPPLANAdapter",
+        "OPPLANAdapter",
+        "ReplayPlan",
+        "ReplayRunner",
+        "SnapshotDelta",
+        "SnapshotNodeKey",
+        "Watcher",
+        "diff_snapshots",
+    ]
+except ImportError:
     pass
 
 __all__ = _exports
