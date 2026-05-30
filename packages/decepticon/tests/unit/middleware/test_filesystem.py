@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from deepagents.backends.protocol import (
+    EditResult,
     FileDownloadResponse,
     FileInfo,
     GlobResult,
@@ -11,7 +12,11 @@ from deepagents.backends.protocol import (
 )
 from deepagents.middleware.filesystem import FilesystemMiddleware as BaseFilesystemMiddleware
 
-from decepticon.middleware.filesystem import EngagementFilesystemBackend, FilesystemMiddleware
+from decepticon.middleware.filesystem import (
+    EngagementFilesystemBackend,
+    FilesystemMiddleware,
+    _workspace_from_runtime,
+)
 
 
 class RecordingBackend:
@@ -48,9 +53,19 @@ class RecordingBackend:
     def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
         return GrepResult(matches=self.grep_raw(pattern, path, glob))
 
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        self.calls.append(("edit", (file_path, old_string, new_string, replace_all)))
+        return EditResult(path=file_path, occurrences=1)
+
     def download_files(self, paths: list[str]) -> list[FileDownloadResponse]:
         self.calls.append(("download_files", paths))
-        return [FileDownloadResponse(path=paths[0], content=b"image")]
+        return [FileDownloadResponse(path=p, content=b"image") for p in paths]
 
 
 def test_maps_virtual_workspace_paths_to_engagement_root() -> None:
@@ -263,3 +278,342 @@ def test_backend_error_does_not_leak_engagement_internal_path() -> None:
     # "/workspace/eng-1".
     assert "/workspace/eng-1" not in result.error
     assert "/workspace" in result.error
+
+
+class _EditErrorBackend(RecordingBackend):
+    def edit(
+        self,
+        file_path: str,
+        old_string: str,
+        new_string: str,
+        replace_all: bool = False,
+    ) -> EditResult:
+        self.calls.append(("edit", (file_path, old_string, new_string, replace_all)))
+        return EditResult(error=f"Path '{file_path}': not_found")
+
+
+class _WriteErrorBackend(RecordingBackend):
+    def write(self, file_path: str, content: str) -> WriteResult:
+        self.calls.append(("write", (file_path, content)))
+        if file_path.endswith(".engagement"):
+            return WriteResult(path=file_path)
+        return WriteResult(error=f"Path '{file_path}': permission_denied")
+
+
+class _GrepErrorBackend(RecordingBackend):
+    def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
+        self.calls.append(("grep", (pattern, path, glob)))
+        return GrepResult(error=f"Path '{path}': path_not_found")
+
+
+class _GlobErrorBackend(RecordingBackend):
+    def glob(self, pattern: str, path: str = "/") -> GlobResult:
+        self.calls.append(("glob", (pattern, path)))
+        return GlobResult(error=f"Path '{path}': path_not_found")
+
+
+class _GrepOutsideRootBackend(RecordingBackend):
+    def grep(self, pattern: str, path: str | None = None, glob: str | None = None) -> GrepResult:
+        self.calls.append(("grep", (pattern, path, glob)))
+        return GrepResult(matches=[{"path": "/elsewhere/secret", "line": 1, "text": "x"}])
+
+
+class _RaisingWriteBackend(RecordingBackend):
+    def write(self, file_path: str, content: str) -> WriteResult:
+        raise RuntimeError("backend write exploded")
+
+
+def test_edit_success_path_rewrite_maps_virtual_to_real_and_back() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped.edit("/workspace/x.txt", "old", "new")
+
+    assert backend.calls[-1] == ("edit", ("/workspace/test/x.txt", "old", "new", False))
+    assert result.error is None
+    assert result.path == "/workspace/x.txt"
+
+
+def test_edit_error_masking_strips_real_engagement_path() -> None:
+    backend = _EditErrorBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+    scoped._root_ensured = True
+
+    result = scoped.edit("/workspace/x.txt", "a", "b")
+
+    assert result.error is not None
+    assert "/workspace/test" not in result.error
+    assert "/workspace/x.txt" in result.error
+
+
+def test_edit_fail_closed_when_root_is_none() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, None)
+
+    result = scoped.edit("/workspace/x.txt", "a", "b")
+
+    assert result.error is not None
+    assert backend.calls == []
+
+
+def test_edit_replace_all_true_reaches_backend() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    scoped.edit("/workspace/x.txt", "a", "b", replace_all=True)
+
+    assert backend.calls[-1] == ("edit", ("/workspace/test/x.txt", "a", "b", True))
+
+
+def test_write_error_masking_strips_real_engagement_path() -> None:
+    backend = _WriteErrorBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+    scoped._root_ensured = True
+
+    result = scoped.write("/workspace/findings/x.md", "data")
+
+    assert result.error is not None
+    assert "/workspace/test" not in result.error
+    assert "/workspace/findings/x.md" in result.error
+
+
+def test_grep_error_masking_strips_real_engagement_path() -> None:
+    backend = _GrepErrorBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+    scoped._root_ensured = True
+
+    result = scoped.grep("pat", path="/workspace")
+
+    assert result.error is not None
+    assert "/workspace/test" not in result.error
+
+
+def test_grep_raw_success_returns_list_of_matches() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped.grep_raw("target", path="/workspace")
+
+    assert isinstance(result, list)
+    assert len(result) > 0
+    assert result[0]["path"].startswith("/workspace/")
+
+
+def test_grep_raw_error_returns_masked_error_string() -> None:
+    backend = _GrepErrorBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+    scoped._root_ensured = True
+
+    result = scoped.grep_raw("p", path="/workspace")
+
+    assert isinstance(result, str)
+    assert "/workspace/test" not in result
+
+
+def test_glob_error_masking_strips_real_engagement_path() -> None:
+    backend = _GlobErrorBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+    scoped._root_ensured = True
+
+    result = scoped.glob("**/*.json")
+
+    assert result.error is not None
+    assert "/workspace/test" not in result.error
+
+
+def test_glob_info_success_returns_list_with_virtual_paths() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped.glob_info("**/*.json")
+
+    assert isinstance(result, list)
+    assert result[0]["path"] == "/workspace/plan/roe.json"
+
+
+def test_ls_info_success_returns_list_of_entries() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped.ls_info("/workspace")
+
+    assert result == [{"path": "/workspace/plan/roe.json", "is_dir": False}]
+
+
+def test_ls_info_returns_empty_list_on_backend_error() -> None:
+    backend = _ErrorBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/eng-1")
+
+    result = scoped.ls_info("/workspace")
+
+    assert result == []
+
+
+def test_download_files_success_maps_real_paths_to_backend_and_returns_virtual() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped.download_files(["/workspace/loot/a.bin", "/workspace/loot/b.bin"])
+
+    assert backend.calls[-1] == (
+        "download_files",
+        ["/workspace/test/loot/a.bin", "/workspace/test/loot/b.bin"],
+    )
+    paths = [r.path for r in result]
+    assert paths == ["/workspace/loot/a.bin", "/workspace/loot/b.bin"]
+    assert result[0].content == b"image"
+    assert result[1].content == b"image"
+
+
+def test_download_files_invalid_path_when_root_is_none_returns_error_responses() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, None)
+
+    result = scoped.download_files(["/workspace/a", "/workspace/b"])
+
+    assert all(r.error == "invalid_path" for r in result)
+    assert all(r.content is None for r in result)
+    assert result[0].path == "/workspace/a"
+    assert result[1].path == "/workspace/b"
+    assert "download_files" not in [op for (op, _) in backend.calls]
+
+
+def test_download_files_traversal_path_returns_invalid_path_error() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped.download_files(["/workspace/../etc/passwd"])
+
+    assert len(result) == 1
+    assert result[0].error == "invalid_path"
+    assert result[0].content is None
+
+
+def test_virtual_returns_none_for_path_outside_root_and_grep_excludes_it() -> None:
+    backend = _GrepOutsideRootBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+    scoped._root_ensured = True
+
+    result = scoped.grep("p", path="/workspace")
+
+    assert result.error is None
+    assert result.matches == []
+
+
+def test_glob_root_pattern_translates_workspace_to_double_glob() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    scoped.glob("/workspace")
+
+    assert backend.calls[-1] == ("glob_info", ("**/*", "/workspace/test"))
+
+
+def test_glob_slash_root_also_translates_to_double_glob() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    scoped.glob("/")
+
+    assert backend.calls[-1] == ("glob_info", ("**/*", "/workspace/test"))
+
+
+def test_glob_relative_pattern_passes_through_unchanged() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    scoped.glob("*.json")
+
+    assert backend.calls[-1] == ("glob_info", ("*.json", "/workspace/test"))
+
+
+def test_glob_fail_closed_when_root_is_none() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, None)
+
+    result = scoped.glob("**/*")
+
+    assert result.error is not None
+    assert backend.calls == []
+
+
+def test_ensure_root_swallows_write_exception_and_marks_ensured() -> None:
+    backend = _RaisingWriteBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/eng")
+
+    scoped.ls("/workspace")
+
+    assert scoped._root_ensured is True
+
+
+def test_ensure_root_issues_no_second_write_across_multiple_calls() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/eng")
+    scoped._root_ensured = True
+
+    scoped.ls("/workspace")
+
+    write_calls = [op for (op, _) in backend.calls if op == "write"]
+    assert len(write_calls) == 0
+
+
+def test_mask_returns_error_unchanged_when_root_is_none() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+    scoped._root = None
+
+    result = scoped._mask("some error mentioning /workspace/test/x", "/workspace/test/x")
+
+    assert result == "some error mentioning /workspace/test/x"
+
+
+def test_mask_returns_empty_error_unchanged() -> None:
+    backend = RecordingBackend()
+    scoped = EngagementFilesystemBackend(backend, "/workspace/test")
+
+    result = scoped._mask("", "/workspace/test/x")
+
+    assert result == ""
+
+
+def test_workspace_from_runtime_reads_state_dict() -> None:
+    class _FakeRuntime:
+        state = {"workspace_path": "/workspace/eng"}
+        config = {}
+
+    assert _workspace_from_runtime(_FakeRuntime()) == "/workspace/eng"
+
+
+def test_workspace_from_runtime_reads_config_configurable() -> None:
+    class _FakeRuntime:
+        state = {}
+        config = {"configurable": {"workspace_path": "/workspace/web"}}
+
+    assert _workspace_from_runtime(_FakeRuntime()) == "/workspace/web"
+
+
+def test_workspace_from_runtime_returns_none_when_both_empty() -> None:
+    class _FakeRuntime:
+        state = {}
+        config = {"configurable": {}}
+
+    assert _workspace_from_runtime(_FakeRuntime()) is None
+
+
+def test_workspace_from_runtime_returns_none_when_attrs_absent() -> None:
+    class _FakeRuntime:
+        pass
+
+    assert _workspace_from_runtime(_FakeRuntime()) is None
+
+
+def test_filesystem_middleware_get_backend_wraps_in_engagement_backend() -> None:
+    class _FakeRuntime:
+        state = {}
+        config = {"configurable": {"workspace_path": "/workspace/eng"}}
+
+    mw = FilesystemMiddleware(backend=RecordingBackend())
+    result = mw._get_backend(_FakeRuntime())
+
+    assert isinstance(result, EngagementFilesystemBackend)
+    assert result._root == "/workspace/eng"
