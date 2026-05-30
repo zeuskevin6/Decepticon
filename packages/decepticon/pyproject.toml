@@ -82,6 +82,7 @@ telemetry = [
 all = ["decepticon[neo4j,telemetry]"]
 
 [project.scripts]
+decepticon-cli = "decepticon.cli.__main__:main"
 decepticon-kg-health = "decepticon.tools.research.health:main"
 
 # Plugin entry-point groups consumed by ``decepticon.plugin_loader``.

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 
+from decepticon.cli.audit import main as audit_main
 from decepticon.cli.auth import main as auth_main
 from decepticon.cli.scan import main as scan_main
 
@@ -14,6 +15,7 @@ def _print_help() -> int:
         "Subcommands:\n"
         "  scan    Run a one-shot security scan and emit SARIF\n"
         "  auth    Show provider/auth configuration (API keys + subscriptions)\n\n"
+        "  audit   Verify engagement audit ledgers\n\n"
         "Run a subcommand with --help for its flags.",
         file=sys.stderr,
     )
@@ -30,6 +32,8 @@ def main(argv: list[str] | None = None) -> int:
         return scan_main(rest)
     if sub == "auth":
         return auth_main(rest)
+    if sub == "audit":
+        return audit_main(rest)
     print(f"unknown subcommand: {sub}\n", file=sys.stderr)
     _print_help()
     return 2
