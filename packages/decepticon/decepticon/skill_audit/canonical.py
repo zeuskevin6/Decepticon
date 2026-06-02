@@ -26,12 +26,9 @@ def load_canonical_subdomains() -> frozenset[str]:
     raw = yaml.safe_load(SUBDOMAIN_LIST_PATH.read_text(encoding="utf-8"))
     if not isinstance(raw, dict) or "canonical" not in raw:
         raise ValueError(
-            f"{SUBDOMAIN_LIST_PATH} must be a YAML mapping with a "
-            f"top-level 'canonical' key"
+            f"{SUBDOMAIN_LIST_PATH} must be a YAML mapping with a top-level 'canonical' key"
         )
     entries = raw["canonical"]
     if not isinstance(entries, list):
-        raise ValueError(
-            f"{SUBDOMAIN_LIST_PATH}: 'canonical' must be a list of strings"
-        )
+        raise ValueError(f"{SUBDOMAIN_LIST_PATH}: 'canonical' must be a list of strings")
     return frozenset(str(entry) for entry in entries)

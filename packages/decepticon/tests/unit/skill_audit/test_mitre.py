@@ -22,21 +22,19 @@ from decepticon.skill_audit.mitre import (
         ("AML.T0043.001", MitreMatrix.ATLAS),
     ],
 )
-def test_classify_mitre_id_accepts_valid_formats(
-    raw: str, expected: MitreMatrix
-) -> None:
+def test_classify_mitre_id_accepts_valid_formats(raw: str, expected: MitreMatrix) -> None:
     assert classify_mitre_id(raw) is expected
 
 
 @pytest.mark.parametrize(
     "bad",
     [
-        "TA0001",                  # tactic ID, not a technique
+        "TA0001",  # tactic ID, not a technique
         "TA0008",
         "defense-evasion-validation",
-        "T19",                     # too short
-        "T19000",                  # too long
-        "T1595.00a",               # non-digit sub
+        "T19",  # too short
+        "T19000",  # too long
+        "T1595.00a",  # non-digit sub
         "AML.T1190 stuff",
         "",
         "   ",

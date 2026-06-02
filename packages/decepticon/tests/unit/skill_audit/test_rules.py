@@ -29,41 +29,31 @@ def _ids(violations: list[Violation]) -> set[RuleId]:
 
 def test_clean_fixture_produces_no_violations() -> None:
     text = (FIXTURES / "clean.md").read_text(encoding="utf-8")
-    violations = validate_skill_file(
-        _path_inside_offensive_tree("clean"), text
-    )
+    violations = validate_skill_file(_path_inside_offensive_tree("clean"), text)
     assert violations == []
 
 
 def test_missing_subdomain_triggers_missing_required() -> None:
     text = (FIXTURES / "missing_subdomain.md").read_text(encoding="utf-8")
-    violations = validate_skill_file(
-        _path_inside_offensive_tree("missing-subdomain"), text
-    )
+    violations = validate_skill_file(_path_inside_offensive_tree("missing-subdomain"), text)
     assert RuleId.MISSING_REQUIRED in _ids(violations)
 
 
 def test_bad_mitre_triggers_bad_mitre_format() -> None:
     text = (FIXTURES / "bad_mitre.md").read_text(encoding="utf-8")
-    violations = validate_skill_file(
-        _path_inside_offensive_tree("bad-mitre"), text
-    )
+    violations = validate_skill_file(_path_inside_offensive_tree("bad-mitre"), text)
     assert RuleId.BAD_MITRE_FORMAT in _ids(violations)
 
 
 def test_no_attribution_triggers_when_offensive() -> None:
     text = (FIXTURES / "no_attribution.md").read_text(encoding="utf-8")
-    violations = validate_skill_file(
-        _path_inside_offensive_tree("no-attribution"), text
-    )
+    violations = validate_skill_file(_path_inside_offensive_tree("no-attribution"), text)
     assert RuleId.NO_ATTRIBUTION in _ids(violations)
 
 
 def test_reporting_skill_is_exempt_from_attribution_rule() -> None:
     text = (FIXTURES / "reporting_skill.md").read_text(encoding="utf-8")
-    violations = validate_skill_file(
-        _path_inside_offensive_tree("reporting-example"), text
-    )
+    violations = validate_skill_file(_path_inside_offensive_tree("reporting-example"), text)
     assert RuleId.NO_ATTRIBUTION not in _ids(violations)
 
 
@@ -78,9 +68,7 @@ def test_bad_subdomain_triggers_bad_subdomain_rule() -> None:
         "---\n"
         "body\n"
     )
-    violations = validate_skill_file(
-        "/skills/standard/recon/x/SKILL.md", text
-    )
+    violations = validate_skill_file("/skills/standard/recon/x/SKILL.md", text)
     assert RuleId.BAD_SUBDOMAIN in _ids(violations)
 
 
@@ -97,7 +85,5 @@ def test_aliased_subdomain_is_accepted_as_canonical() -> None:
         "---\n"
         "body\n"
     )
-    violations = validate_skill_file(
-        "/skills/standard/reverse-engineering/x/SKILL.md", text
-    )
+    violations = validate_skill_file("/skills/standard/reverse-engineering/x/SKILL.md", text)
     assert RuleId.BAD_SUBDOMAIN not in _ids(violations)

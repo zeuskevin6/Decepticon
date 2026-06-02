@@ -38,14 +38,9 @@ def test_handles_relative_paths() -> None:
     # The validator works from absolute / repo-rooted paths but should
     # also handle relative ones without crashing.
     assert (
-        is_offensive_path(
-            "packages/decepticon/decepticon/skills/standard/recon/x/SKILL.md"
-        )
-        is True
+        is_offensive_path("packages/decepticon/decepticon/skills/standard/recon/x/SKILL.md") is True
     )
     assert (
-        is_offensive_path(
-            "packages/decepticon/decepticon/skills/standard/reporting/x/SKILL.md"
-        )
+        is_offensive_path("packages/decepticon/decepticon/skills/standard/reporting/x/SKILL.md")
         is False
     )

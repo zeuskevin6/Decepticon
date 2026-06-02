@@ -53,13 +53,8 @@ def test_scan_corpus_reports_violations_per_file(tmp_path: Path) -> None:
     assert any("missing-subdomain" in p for p in by_path)
     assert any("bad-mitre" in p for p in by_path)
     assert any("no-attribution" in p for p in by_path)
-    assert not any(
-        "/standard/reporting/reporting-example/SKILL.md" in p
-        for p in by_path
-    )
-    assert not any(
-        "/standard/recon/clean/SKILL.md" in p for p in by_path
-    )
+    assert not any("/standard/reporting/reporting-example/SKILL.md" in p for p in by_path)
+    assert not any("/standard/recon/clean/SKILL.md" in p for p in by_path)
 
 
 def test_main_exits_zero_when_warn_mode_and_violations(

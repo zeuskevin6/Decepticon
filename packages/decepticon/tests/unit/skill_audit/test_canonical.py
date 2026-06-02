@@ -10,9 +10,7 @@ from decepticon.skill_audit.canonical import (
 
 def test_subdomain_list_path_points_at_packaged_yaml() -> None:
     assert SUBDOMAIN_LIST_PATH.name == "subdomains.yaml"
-    assert SUBDOMAIN_LIST_PATH.exists(), (
-        f"canonical YAML missing at {SUBDOMAIN_LIST_PATH}"
-    )
+    assert SUBDOMAIN_LIST_PATH.exists(), f"canonical YAML missing at {SUBDOMAIN_LIST_PATH}"
 
 
 def test_load_canonical_subdomains_returns_frozenset_of_strings() -> None:
@@ -26,9 +24,7 @@ def test_canonical_list_contains_known_phases() -> None:
     subdomains = load_canonical_subdomains()
     # Sanity check: a handful of phases we know must be canonical.
     for must_be_present in ("reconnaissance", "execution", "ai-security"):
-        assert must_be_present in subdomains, (
-            f"{must_be_present!r} missing from canonical list"
-        )
+        assert must_be_present in subdomains, f"{must_be_present!r} missing from canonical list"
 
 
 def test_canonical_list_excludes_known_aliases() -> None:

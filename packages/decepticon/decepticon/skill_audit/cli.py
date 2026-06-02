@@ -47,10 +47,7 @@ def scan_corpus(root: Path) -> CorpusReport:
 def _format_report(report: CorpusReport) -> str:
     """Human-readable report. One line per violation, summary at the end."""
     lines = [f"{v.rule_id.value} {v.path}: {v.detail}" for v in report.violations]
-    lines.append(
-        f"-- {report.files_scanned} files scanned, "
-        f"{len(report.violations)} violations"
-    )
+    lines.append(f"-- {report.files_scanned} files scanned, {len(report.violations)} violations")
     return "\n".join(lines)
 
 

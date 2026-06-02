@@ -23,9 +23,7 @@ from decepticon.skill_audit.aliases import (
         ("ai-security", "ai-security"),
     ],
 )
-def test_resolve_subdomain_returns_canonical_form(
-    raw: str, expected: str
-) -> None:
+def test_resolve_subdomain_returns_canonical_form(raw: str, expected: str) -> None:
     assert resolve_subdomain(raw) == expected
 
 
@@ -47,6 +45,4 @@ def test_alias_map_is_exposed_and_well_formed() -> None:
     canonical_values = set(SUBDOMAIN_ALIASES.values())
     aliases = set(SUBDOMAIN_ALIASES.keys())
     overlap = canonical_values & aliases
-    assert not overlap, (
-        f"alias map has canonical values used as keys: {overlap}"
-    )
+    assert not overlap, f"alias map has canonical values used as keys: {overlap}"
