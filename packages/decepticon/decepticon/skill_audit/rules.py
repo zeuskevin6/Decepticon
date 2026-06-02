@@ -31,6 +31,7 @@ class RuleId(enum.Enum):
     BAD_SUBDOMAIN = "R-bad-subdomain"
     BAD_MITRE_FORMAT = "R-bad-mitre-format"
     NO_ATTRIBUTION = "R-no-attribution"
+    DUPLICATE_NAME = "R-duplicate-name"
 
 
 @dataclass(frozen=True)

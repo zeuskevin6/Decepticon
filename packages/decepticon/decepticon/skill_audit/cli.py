@@ -16,7 +16,7 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from decepticon.skill_audit.rules import Violation, validate_skill_file
+from decepticon.skill_audit.rules import RuleId, Violation, validate_skill_file
 
 
 class ExitCode(enum.IntEnum):
@@ -34,13 +34,45 @@ class CorpusReport:
 
 
 def scan_corpus(root: Path) -> CorpusReport:
-    """Walk every ``SKILL.md`` under ``root`` and collect violations."""
+    """Walk every ``SKILL.md`` under ``root`` and collect violations.
+
+    Per-file rules run via ``validate_skill_file``. Corpus-level rules
+    (currently only ``R-duplicate-name``) run after the walk so they
+    can see every frontmatter at once.
+    """
     files_scanned = 0
     violations: list[Violation] = []
+    # name → [paths] for R-duplicate-name. The graph builder MERGEs
+    # :Skill nodes on this field; non-unique names silently collapse
+    # rows in Neo4j and lose skills from the live catalog.
+    name_index: dict[str, list[str]] = {}
     for skill_md in sorted(root.rglob("SKILL.md")):
         files_scanned += 1
         text = skill_md.read_text(encoding="utf-8")
         violations.extend(validate_skill_file(str(skill_md), text))
+        # Index the frontmatter name without re-parsing (cheap regex).
+        for line in text.splitlines():
+            stripped = line.strip()
+            if not stripped:
+                continue
+            if stripped == "---":
+                break
+            if stripped.startswith("name:"):
+                name = stripped.split(":", 1)[1].strip().strip("'\"")
+                if name:
+                    name_index.setdefault(name, []).append(str(skill_md))
+                break
+    for name, paths in sorted(name_index.items()):
+        if len(paths) > 1:
+            for p in paths:
+                violations.append(
+                    Violation(
+                        p,
+                        RuleId.DUPLICATE_NAME,
+                        f"frontmatter name {name!r} also appears in: "
+                        + ", ".join(other for other in paths if other != p),
+                    )
+                )
     return CorpusReport(files_scanned=files_scanned, violations=violations)
 
 
