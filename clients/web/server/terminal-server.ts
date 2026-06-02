@@ -3,10 +3,12 @@
  * Terminal WebSocket Server — spawns Decepticon CLI in a PTY.
  *
  * Session-persistent architecture:
- *   PTY processes are keyed by engagement slug + agent ID and survive
- *   WebSocket disconnects. When the browser reconnects (tab refresh,
- *   network blip, hotswap), it reattaches to the SAME PTY — no new
- *   CLI banner, no lost state, no [Reconnecting...] spam.
+ *   PTY processes are keyed by engagement slug and survive WebSocket
+ *   disconnects. When the browser reconnects (tab refresh, network blip,
+ *   hotswap), it reattaches to the SAME PTY — no new CLI banner, no lost
+ *   state, no [Reconnecting...] spam. The key omits the agent id on purpose:
+ *   the CLI flips soundwave -> decepticon in-process on engagement_ready, so
+ *   a later connect computing a different agent must still find the live PTY.
  *
  *   PTYs are only destroyed when:
  *     1. The CLI process itself exits (user typed Ctrl+C, engagement finished)
@@ -65,8 +67,8 @@ interface Session {
 
 const sessions = new Map<string, Session>();
 
-function sessionKey(slug: string, agentId: string): string {
-  return `${slug}:${agentId}`;
+function sessionKey(slug: string): string {
+  return slug;
 }
 
 function appendScrollback(session: Session, data: string): void {
@@ -146,7 +148,7 @@ wss.on("connection", async (ws: WebSocket, req) => {
     return;
   }
 
-  const key = sessionKey(engagementSlug, agentId);
+  const key = sessionKey(engagementSlug);
   let session = sessions.get(key);
 
   // ── Reattach to existing session ──
