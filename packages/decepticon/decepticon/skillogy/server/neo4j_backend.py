@@ -107,16 +107,23 @@ class Neo4jBackend:
     def bulk_ingest_cypher(self, cypher_text: str) -> int:
         """Execute ``cypher_text`` against Neo4j as a sequence of statements.
 
-        The builder emits ``MERGE``-only statements terminated by
-        ``;`` — idempotent re-runs are safe. Returns the number of
-        statements executed. Uses an explicit write session because
-        startup ingest is the one path that legitimately writes; runtime
-        endpoints use read-only sessions.
+        The builder emits ``MERGE``-only statements, each terminated by
+        ``;`` at end of line — naive splitting on ``;`` alone fragments
+        any statement whose string property contains a semicolon (a
+        common case: skill bodies and descriptions). Splitting on
+        ``;\\n`` instead respects the emitter's contract and round-trips
+        the dump cleanly. Idempotent re-runs are safe. Uses a write
+        session because startup ingest is the one path that legitimately
+        writes; runtime endpoints use read-only sessions.
+
+        Returns the number of statements executed.
         """
-        statements = [s.strip() for s in cypher_text.split(";") if s.strip()]
+        statements = [s.strip() for s in cypher_text.split(";\n") if s.strip()]
         with self._driver.session(database=self._database) as session:
             for stmt in statements:
-                session.run(stmt)
+                # Strip any trailing ``;`` left by the final-statement
+                # edge case (the file ends in ``;`` without a newline).
+                session.run(stmt.rstrip(";").rstrip())
         return len(statements)
 
     # ---- skill ops ----

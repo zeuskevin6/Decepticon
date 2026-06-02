@@ -28,8 +28,23 @@ from decepticon.skillogy.builder.model import Edge, Node
 
 
 def _escape_string(value: str) -> str:
-    """Cypher-escape a string literal — single quotes + backslashes."""
-    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+    """Cypher-escape a string literal.
+
+    Escapes backslashes, single quotes, and control characters
+    (``\\n`` / ``\\r`` / ``\\t``) so every emitted literal sits on a
+    single line. Without this the downstream bulk ingest path
+    (``Neo4jBackend.bulk_ingest_cypher``, which splits on ``;\\n``)
+    fragments any skill body that contains a literal newline.
+    """
+    return (
+        "'"
+        + value.replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+        + "'"
+    )
 
 
 def cypher_literal(value: Any) -> str:

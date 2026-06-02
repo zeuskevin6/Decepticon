@@ -41,6 +41,11 @@ def _setup_logging() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
         stream=sys.stderr,
     )
+    # The Neo4j driver logs every cartesian-product hint at INFO during
+    # bulk ingest — thousands of edge MERGEs against AssetType etc. trip
+    # this. It's expected (the MERGE intentionally joins disconnected
+    # nodes); silencing the notification logger keeps boot logs readable.
+    logging.getLogger("neo4j.notifications").setLevel(logging.WARNING)
 
 
 def _build_backend() -> Neo4jBackend:
