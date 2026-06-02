@@ -43,6 +43,7 @@ interface WebTerminalProps {
   engagementId: string;
   engagementSlug: string;
   agentId?: string;
+  threadId?: string;
   className?: string;
   onThreadId?: (threadId: string) => void;
 }
@@ -51,6 +52,7 @@ export function WebTerminal({
   engagementId,
   engagementSlug,
   agentId = "soundwave",
+  threadId,
   className,
   onThreadId,
 }: WebTerminalProps) {
@@ -63,6 +65,8 @@ export function WebTerminal({
   engagementSlugRef.current = engagementSlug;
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
+  const threadIdRef = useRef(threadId);
+  threadIdRef.current = threadId;
   const onThreadIdRef = useRef(onThreadId);
   onThreadIdRef.current = onThreadId;
 
@@ -117,11 +121,13 @@ export function WebTerminal({
     const eid = engagementIdRef.current;
     const slug = engagementSlugRef.current;
     const aid = agentIdRef.current;
+    const tid = threadIdRef.current;
 
-    const wsUrl =
+    let wsUrl =
       `${TERMINAL_WS_URL}?engagementId=${encodeURIComponent(eid)}` +
       `&engagementSlug=${encodeURIComponent(slug)}` +
       `&agentId=${encodeURIComponent(aid)}`;
+    if (tid) wsUrl += `&threadId=${encodeURIComponent(tid)}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

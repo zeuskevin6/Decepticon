@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, type ReactNode } from "react";
 import type { SubagentCustomEvent } from "@decepticon/streaming";
 
 interface EngagementContextValue {
@@ -27,6 +27,8 @@ interface EngagementProviderProps {
   engagementId: string;
   engagementSlug: string;
   agentId: "soundwave" | "decepticon";
+  threadId: string | null;
+  setThreadId: (id: string) => void;
   events: SubagentCustomEvent[];
   isRunning: boolean;
   activeRunId: string | null;
@@ -37,16 +39,12 @@ export function EngagementProvider({
   engagementId,
   engagementSlug,
   agentId,
+  threadId,
+  setThreadId,
   events,
   isRunning,
   activeRunId,
 }: EngagementProviderProps) {
-  const [threadId, setThreadId] = useState<string | null>(null);
-
-  const handleSetThreadId = useCallback((id: string) => {
-    setThreadId(id);
-  }, []);
-
   return (
     <EngagementContext.Provider
       value={{
@@ -54,7 +52,7 @@ export function EngagementProvider({
         engagementSlug,
         agentId,
         threadId,
-        setThreadId: handleSetThreadId,
+        setThreadId,
         events,
         isRunning,
         activeRunId,

@@ -39,11 +39,14 @@ export default function EngagementLayout({
           fetch(`/api/engagements/${engagementId}/plan-docs`),
         ]);
         if (!engRes.ok) return;
-        const eng = (await engRes.json()) as { name: string };
+        const eng = (await engRes.json()) as { name: string; threadId?: string | null };
         const planDocs = planRes.ok ? ((await planRes.json()) as Record<string, unknown>) : {};
         if (cancelled) return;
         setEngagement(eng);
         setAgentId(pickAssistant(planDocs));
+        // Seed the observer from the persisted thread so the dashboard attaches
+        // to the engagement's real thread on load, not a brand-new empty one.
+        if (eng.threadId) setThreadId(eng.threadId);
       } catch (err) {
         console.error("[EngagementLayout] Failed to resolve engagement:", err);
       }
@@ -65,6 +68,8 @@ export default function EngagementLayout({
       engagementId={engagementId}
       engagementSlug={engagement?.name ?? ""}
       agentId={agentId ?? "soundwave"}
+      threadId={threadId}
+      setThreadId={setThreadId}
       events={events}
       isRunning={isRunning}
       activeRunId={activeRunId}
@@ -85,6 +90,7 @@ export default function EngagementLayout({
               engagementId={engagementId}
               engagementSlug={engagement!.name}
               agentId={agentId!}
+              threadId={threadId ?? undefined}
               className="h-full"
               onThreadId={setThreadId}
             />
