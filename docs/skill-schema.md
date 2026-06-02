@@ -52,11 +52,20 @@ map exists only to absorb existing corpus drift.
 
 | Author wrote | Canonical |
 |---|---|
-| `reverser` | `reverse-engineering` |
+| `reverser`, `re` | `reverse-engineering` |
 | `contracts` | `smart-contracts` |
 | `cloud-native` | `cloud` |
 | `ad` | `active-directory` |
-| `re` | `reverse-engineering` |
+| `phish` | `phishing` |
+| `ics` | `ics-ot` |
+| `c2` | `command-and-control` |
+| `post-exploitation` | `post-exploit` |
+| `supplychain` | `supply-chain` |
+| `api`, `injection`, `client-side`, `authentication`, `authorization`, `redirect`, `cache` | `web-exploitation` (web-attack sub-categories) |
+| `infrastructure` | `command-and-control` |
+| `cryptanalysis` | `credential-access` |
+| `verification` | `analyst` |
+| `deconfliction` | `orchestration` |
 
 ## Fields explicitly NOT in this schema
 

@@ -34,9 +34,15 @@ canonical:
   - phishing
   - smart-contracts
 
+  # Broad post-compromise + supply-chain categories
+  - supply-chain
+  - post-exploit
+
   # Engagement-meta (non-offensive)
   - reporting
   - planning
   - orchestration
   - adversary-emulation
   - analyst
+  - opsec
+  - benchmark

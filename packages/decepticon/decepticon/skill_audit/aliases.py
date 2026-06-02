@@ -17,6 +17,25 @@ SUBDOMAIN_ALIASES: Final[dict[str, str]] = {
     "contracts": "smart-contracts",
     "cloud-native": "cloud",
     "ad": "active-directory",
+    # Abbreviations and spelling variants.
+    "phish": "phishing",
+    "ics": "ics-ot",
+    "c2": "command-and-control",
+    "post-exploitation": "post-exploit",
+    "supplychain": "supply-chain",
+    # Web-exploitation sub-categories collapsed into the parent phase.
+    "api": "web-exploitation",
+    "injection": "web-exploitation",
+    "client-side": "web-exploitation",
+    "authentication": "web-exploitation",
+    "authorization": "web-exploitation",
+    "redirect": "web-exploitation",
+    "cache": "web-exploitation",
+    # Specialized values aliased to the closest canonical phase.
+    "infrastructure": "command-and-control",
+    "cryptanalysis": "credential-access",
+    "verification": "analyst",
+    "deconfliction": "orchestration",
 }
 
 
