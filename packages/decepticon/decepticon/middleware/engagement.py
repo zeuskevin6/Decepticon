@@ -39,7 +39,7 @@ from typing_extensions import override
 
 from decepticon.middleware.opplan import _reduce_engagement_name, _reduce_workspace_path
 from decepticon.tools.bash.bash import bash_workspace
-from decepticon.tools.research._engagement_scope import set_active_engagement
+from decepticon_core.utils.engagement_scope import set_active_engagement
 
 
 class EngagementContextState(AgentState):
