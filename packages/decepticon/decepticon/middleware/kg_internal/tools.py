@@ -28,10 +28,11 @@ from langgraph.prebuilt import InjectedState
 from decepticon.middleware.kg_internal.ingest import ingest as _ingest_dispatch
 from decepticon.middleware.kg_internal.store import KGStore
 
-
 DEFAULT_KG_TOOLS = frozenset({"kg_record", "kg_ingest"})
 
-_ENGAGEMENT_UNSET = "kg_engagement is not set on agent state; middleware before_agent did not hydrate"
+_ENGAGEMENT_UNSET = (
+    "kg_engagement is not set on agent state; middleware before_agent did not hydrate"
+)
 
 
 def _resolve_engagement(state: dict[str, Any] | None) -> str:

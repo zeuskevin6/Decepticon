@@ -18,7 +18,6 @@ from decepticon.middleware.kg_internal.tools import (
     build_kg_tools,
 )
 
-
 # ── Tool invocation envelope (matches OPPLAN test pattern) ──────────────
 
 

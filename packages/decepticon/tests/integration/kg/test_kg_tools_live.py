@@ -25,9 +25,7 @@ def _call(tool: Any, args: dict[str, Any], state: dict[str, Any]) -> str:
     return tool.invoke(payload)
 
 
-def test_kg_record_writes_through_live_store(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_kg_record_writes_through_live_store(kgstore: KGStore, engagement: str) -> None:
     [kg_record, _] = build_kg_tools(kgstore)
     obs = [
         {
@@ -59,9 +57,7 @@ def test_kg_record_writes_through_live_store(
     assert rows[0]["sep"] == "live-tool-call"
 
 
-def test_kg_record_atomic_batch_with_edges_live(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_kg_record_atomic_batch_with_edges_live(kgstore: KGStore, engagement: str) -> None:
     [kg_record, _] = build_kg_tools(kgstore)
     obs = [
         {
@@ -135,9 +131,7 @@ def test_kg_ingest_routes_nuclei_jsonl_through_live_store(
     assert rows[0]["sep"] == "live-tool-call"
 
 
-def test_kg_record_idempotent_across_two_calls_live(
-    kgstore: KGStore, engagement: str
-) -> None:
+def test_kg_record_idempotent_across_two_calls_live(kgstore: KGStore, engagement: str) -> None:
     """Two ToolCalls with the same observation key collapse to one
     node — the deterministic key + (key, engagement) uniqueness."""
     [kg_record, _] = build_kg_tools(kgstore)
