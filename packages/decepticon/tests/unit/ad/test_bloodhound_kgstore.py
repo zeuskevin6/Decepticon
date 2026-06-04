@@ -1,0 +1,484 @@
+"""KGStore-mock-based tests for the BloodHound ingest rewrite.
+
+These replace the legacy ``test_ad_bloodhound_tools.py`` / portions of
+``test_ad.py`` / ``test_delegation_props.py`` / ``test_gpo_bh_type_case.py``
+that were tied to the ``ingest_bloodhound_zip(path, graph)`` signature.
+
+The new ingest writes through ``KGStore.record_observations``; we
+inject a ``_FakeKGStore`` via the ``store=`` kwarg and inspect the
+captured observations to verify the trap-fix behaviour from the
+BloodHound RFC §2.7.
+"""
+
+from __future__ import annotations
+
+import io
+import zipfile
+from collections.abc import Iterable
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from decepticon.tools.ad.bloodhound import (
+    ImportStats,
+    ingest_bloodhound_zip,
+    merge_bloodhound_json,
+)
+
+
+class _FakeKGStore:
+    """Captures every ``record_observations`` call so tests can inspect
+    the observation graph the ingest would write."""
+
+    def __init__(self) -> None:
+        self.observations: list[dict[str, Any]] = []
+        self.engagement: str | None = None
+        self.created_by: str | None = None
+        self.source_episode_id: str | None = None
+        self.flush_count: int = 0
+
+    def record_observations(
+        self,
+        observations: Iterable[dict[str, Any]],
+        *,
+        engagement: str,
+        created_by: str,
+        source_episode_id: str,
+    ) -> dict[str, Any]:
+        obs_list = list(observations)
+        self.observations.extend(obs_list)
+        self.engagement = engagement
+        self.created_by = created_by
+        self.source_episode_id = source_episode_id
+        self.flush_count += 1
+        edge_count = sum(len(o.get("edges_out") or []) for o in obs_list)
+        return {
+            "created": len(obs_list),
+            "merged": 0,
+            "edges": edge_count,
+            "revision": "fake-rev",
+        }
+
+    def close(self) -> None:
+        pass
+
+    # ── Inspection helpers ──────────────────────────────────────────
+
+    def nodes_by_key(self) -> dict[str, dict[str, Any]]:
+        return {o["key"]: o for o in self.observations}
+
+    def edges(self) -> list[tuple[str, str, str, dict[str, Any]]]:
+        """Returns (src_key, edge_kind, dst_key, props) tuples."""
+        out: list[tuple[str, str, str, dict[str, Any]]] = []
+        for obs in self.observations:
+            for edge in obs.get("edges_out") or []:
+                out.append(
+                    (
+                        obs["key"],
+                        edge["kind"],
+                        edge["to_key"],
+                        edge.get("props") or {},
+                    )
+                )
+        return out
+
+    def edges_of_kind(self, kind: str) -> list[tuple[str, str, dict[str, Any]]]:
+        return [(s, d, p) for s, k, d, p in self.edges() if k == kind]
+
+
+# ── Top-level signature contracts ───────────────────────────────────
+
+
+class TestPublicSignatures:
+    def test_merge_returns_import_stats(self) -> None:
+        store = _FakeKGStore()
+        result = merge_bloodhound_json(
+            {"meta": {"type": "users"}, "data": []},
+            engagement="t-1",
+            store=store,
+        )
+        assert isinstance(result, ImportStats)
+
+    def test_engagement_threaded_to_store(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            {
+                "meta": {"type": "users"},
+                "data": [
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                        "Properties": {"name": "admin"},
+                    }
+                ],
+            },
+            engagement="t-eng",
+            store=store,
+            source_episode_id="ep-x",
+        )
+        assert store.engagement == "t-eng"
+        assert store.source_episode_id == "ep-x"
+        assert store.created_by == "bh_ingest"
+
+    def test_empty_data_array_does_not_flush(self) -> None:
+        """Empty payload short-circuits before any KGStore write."""
+        store = _FakeKGStore()
+        merge_bloodhound_json(
+            {"meta": {"type": "users"}, "data": []},
+            engagement="t-2",
+            store=store,
+        )
+        assert store.flush_count == 0
+        assert store.observations == []
+
+
+# ── Trap 1: PrimaryGroupSID synthesis ───────────────────────────────
+
+
+class TestPrimaryGroupSidSynthesis:
+    def _bh(self) -> dict[str, Any]:
+        return {
+            "meta": {"type": "users"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                    "PrimaryGroupSID": "S-1-5-21-1-1-1-513",
+                    "Properties": {"name": "admin"},
+                }
+            ],
+        }
+
+    def test_member_of_edge_synthesised(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(self._bh(), engagement="t", store=store)
+        member_of_edges = store.edges_of_kind("MEMBER_OF")
+        assert any(
+            "S-1-5-21-1-1-1-500" in s and "S-1-5-21-1-1-1-513" in d for s, d, _ in member_of_edges
+        )
+
+    def test_synth_edge_carries_primary_group_marker(self) -> None:
+        store = _FakeKGStore()
+        merge_bloodhound_json(self._bh(), engagement="t", store=store)
+        member_of_edges = store.edges_of_kind("MEMBER_OF")
+        primary_edges = [p for _s, _d, p in member_of_edges if p.get("bh_right") == "PrimaryGroup"]
+        assert len(primary_edges) == 1
+
+
+# ── Trap 2: Sessions direction (computer → user) ────────────────────
+
+
+class TestSessionsDirection:
+    def test_session_edge_runs_computer_to_user(self) -> None:
+        bh = {
+            "meta": {"type": "computers"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-1001",
+                    "Properties": {"name": "ws01"},
+                    "Sessions": {
+                        "Results": [
+                            {
+                                "ComputerSID": "S-1-5-21-1-1-1-1001",
+                                "UserSID": "S-1-5-21-1-1-1-500",
+                                "LogonType": 2,
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        session_edges = store.edges_of_kind("HAS_SESSION")
+        assert len(session_edges) == 1
+        src, dst, props = session_edges[0]
+        assert "1001" in src  # computer
+        assert "500" in dst  # user
+        assert props.get("logon_type") == 2
+
+    def test_privileged_sessions_marker(self) -> None:
+        bh = {
+            "meta": {"type": "computers"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-1001",
+                    "Properties": {"name": "ws01"},
+                    "PrivilegedSessions": {
+                        "Results": [
+                            {
+                                "ComputerSID": "S-1-5-21-1-1-1-1001",
+                                "UserSID": "S-1-5-21-1-1-1-500",
+                            }
+                        ]
+                    },
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        session_edges = store.edges_of_kind("HAS_SESSION")
+        assert len(session_edges) == 1
+        assert session_edges[0][2].get("privileged") is True
+
+
+# ── Trap 3: ContainedBy flip ────────────────────────────────────────
+
+
+class TestContainedByFlip:
+    def test_child_pointer_flipped_into_parent_contains_child(self) -> None:
+        bh = {
+            "meta": {"type": "users"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                    "Properties": {"name": "admin"},
+                    "ContainedBy": {
+                        "ObjectIdentifier": "OU-DEPT-GUID",
+                        "ObjectType": "OU",
+                    },
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        contains = store.edges_of_kind("CONTAINS")
+        assert any("OU-DEPT-GUID" in s and "S-1-5-21-1-1-1-500" in d for s, d, _ in contains)
+
+
+# ── Trap 4: Trust 4-way split ───────────────────────────────────────
+
+
+class TestTrust4WaySplit:
+    @pytest.mark.parametrize(
+        "trust_type,is_transitive,expected_kind",
+        [
+            ("ParentChild", True, "SAME_FOREST_TRUST"),
+            ("CrossLink", False, "CROSS_FOREST_TRUST"),
+            ("Forest", True, "CROSS_FOREST_TRUST"),
+            ("External", False, "CROSS_FOREST_TRUST"),
+        ],
+    )
+    def test_trust_branches_into_correct_edge_kind(
+        self,
+        trust_type: str,
+        is_transitive: bool,
+        expected_kind: str,
+    ) -> None:
+        bh = {
+            "meta": {"type": "domains"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-0",
+                    "Properties": {"name": "corp.local"},
+                    "Trusts": [
+                        {
+                            "TargetDomainSid": "S-1-5-21-2-2-2-0",
+                            "TrustType": trust_type,
+                            "IsTransitive": is_transitive,
+                        }
+                    ],
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        trust_edges = store.edges_of_kind(expected_kind)
+        assert len(trust_edges) == 1
+        assert trust_edges[0][2].get("trust_type") == trust_type
+
+
+# ── Trap 5: meta.methods provenance ─────────────────────────────────
+
+
+class TestMetaMethodsProvenance:
+    def test_collection_method_bitmask_preserved_on_node_prop(self) -> None:
+        bh = {
+            "meta": {"type": "users", "methods": 32, "version": 5},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                    "Properties": {"name": "admin"},
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        user_node = store.nodes_by_key().get("bh::User::S-1-5-21-1-1-1-500")
+        assert user_node is not None
+        assert user_node["props"].get("bh_methods") == 32
+
+    def test_methods_does_not_leak_into_next_payload(self) -> None:
+        """The collection-method context resets after each payload."""
+        bh_list = [
+            {
+                "meta": {"type": "users", "methods": 32},
+                "data": [
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                        "Properties": {"name": "admin"},
+                    }
+                ],
+            },
+            {
+                "meta": {"type": "groups"},
+                "data": [
+                    {
+                        "ObjectIdentifier": "S-1-5-21-1-1-1-513",
+                        "Properties": {"name": "users"},
+                    }
+                ],
+            },
+        ]
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh_list, engagement="t", store=store)
+        group_node = store.nodes_by_key().get("bh::Group::S-1-5-21-1-1-1-513")
+        assert group_node is not None
+        assert "bh_methods" not in group_node["props"]
+
+
+# ── ACE edge kind mapping (raw form survives) ───────────────────────
+
+
+class TestAceEdgeMapping:
+    @pytest.mark.parametrize(
+        "right_name,expected_kind",
+        [
+            ("GenericAll", "GENERIC_ALL"),
+            ("GenericWrite", "GENERIC_WRITE"),
+            ("WriteDacl", "WRITE_DACL"),
+            ("WriteOwner", "WRITE_OWNER"),
+            ("ForceChangePassword", "FORCE_CHANGE_PASSWORD"),
+            ("AddMember", "ADD_MEMBER"),
+            ("ReadLAPSPassword", "READ_LAPS_PASSWORD"),
+            ("ReadGMSAPassword", "READ_GMSA_PASSWORD"),
+            ("GetChanges", "GET_CHANGES"),
+            ("GetChangesAll", "GET_CHANGES_ALL"),
+            ("DCSync", "DCSYNC"),
+            ("AddKeyCredentialLink", "ADD_KEY_CREDENTIAL_LINK"),
+        ],
+    )
+    def test_each_ace_right_maps_to_distinct_edge_kind(
+        self, right_name: str, expected_kind: str
+    ) -> None:
+        bh = {
+            "meta": {"type": "users"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                    "Properties": {"name": "target"},
+                    "Aces": [
+                        {
+                            "RightName": right_name,
+                            "PrincipalSID": "S-1-5-21-1-1-1-1106",
+                            "PrincipalType": "User",
+                        }
+                    ],
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        edges = store.edges_of_kind(expected_kind)
+        assert any(
+            "1106" in s and "500" in d and p.get("bh_right") == right_name for s, d, p in edges
+        )
+
+    def test_inheritance_hash_preserved_on_ace_edge(self) -> None:
+        bh = {
+            "meta": {"type": "users"},
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                    "Properties": {"name": "target"},
+                    "Aces": [
+                        {
+                            "RightName": "GenericAll",
+                            "PrincipalSID": "S-1-5-21-1-1-1-1106",
+                            "PrincipalType": "User",
+                            "IsInherited": True,
+                            "InheritanceHash": "abc123",
+                        }
+                    ],
+                }
+            ],
+        }
+        store = _FakeKGStore()
+        merge_bloodhound_json(bh, engagement="t", store=store)
+        edges = store.edges_of_kind("GENERIC_ALL")
+        assert any(
+            p.get("is_inherited") is True and p.get("inheritance_hash") == "abc123"
+            for _s, _d, p in edges
+        )
+
+
+# ── ZIP entry handling ──────────────────────────────────────────────
+
+
+class TestZipIngest:
+    def _make_zip(self, tmp_path: Path, payload: dict[str, Any]) -> Path:
+        import json as _json
+
+        zip_path = tmp_path / "bh.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("users.json", _json.dumps(payload))
+        return zip_path
+
+    def test_zip_dispatches_per_filename_hint(self, tmp_path: Path) -> None:
+        payload = {
+            "data": [
+                {
+                    "ObjectIdentifier": "S-1-5-21-1-1-1-500",
+                    "Properties": {"name": "admin"},
+                }
+            ]
+        }
+        store = _FakeKGStore()
+        stats = ingest_bloodhound_zip(
+            self._make_zip(tmp_path, payload),
+            engagement="t",
+            store=store,
+        )
+        assert stats.users == 1
+
+    def test_oversized_entry_silently_skipped(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # Cap to 100 bytes so the test entry trips it.
+        import decepticon.tools.ad.bloodhound as bh_mod
+
+        monkeypatch.setattr(bh_mod, "_MAX_ENTRY_SIZE", 100)
+        oversized = b'{"meta":{"type":"users"},"data":[]}' + b"x" * 200
+        zip_path = tmp_path / "bh.zip"
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr("users.json", oversized)
+        store = _FakeKGStore()
+        stats = ingest_bloodhound_zip(zip_path, engagement="t", store=store)
+        assert stats.users == 0
+
+    def test_in_memory_zip_works_too(self, tmp_path: Path) -> None:
+        # ``ingest_bloodhound_zip`` takes a path; the in-memory ``BytesIO``
+        # path is exercised when callers stream from S3 / GHCR.
+        # Verified separately by spilling to disk via tmp_path here so
+        # the public path is exercised end-to-end.
+        import json as _json
+
+        zip_path = tmp_path / "bh.zip"
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as zf:
+            zf.writestr(
+                "domains.json",
+                _json.dumps(
+                    {
+                        "data": [
+                            {
+                                "ObjectIdentifier": "S-1-5-21-1-1-1-0",
+                                "Properties": {"name": "corp.local"},
+                            }
+                        ]
+                    }
+                ),
+            )
+        zip_path.write_bytes(buf.getvalue())
+        store = _FakeKGStore()
+        stats = ingest_bloodhound_zip(zip_path, engagement="t", store=store)
+        assert stats.domains == 1
