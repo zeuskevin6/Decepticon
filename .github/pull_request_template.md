@@ -39,6 +39,27 @@ Per [QUALITY_BAR §Hard limits](../docs/QUALITY_BAR.md#hard-limits): ≤ 400 run
 
 <!-- Justify the size if you ticked the second box. -->
 
+## End-to-end verification
+
+**Required.** One paragraph naming the exact commands you ran on your
+machine and the exact behavior you observed. "Tested locally," "all
+tests pass," and "should work" are not verification statements — they
+are reasons to close the PR. See
+[QUALITY_BAR §Wired end-to-end](../docs/QUALITY_BAR.md#wired-end-to-end-locally-verified--no-exceptions).
+If you genuinely could not run a part of the change locally, say so
+explicitly here and name what you did instead.
+
+<!--
+Example that meets the bar:
+
+> Brought the stack up with `make dev`, ran `make cli`, executed an
+> engagement against `target=10.0.2.4` with `profile=AUTOBANK`. The
+> new c2_tier=short_haul field propagated through to Sliver implant
+> generation (verified via sliver-client implants — output attached).
+> Confirmed c2_tier=long_haul produces a DNS implant. `make smoke`
+> healthy on a clean volume.
+-->
+
 ## Testing
 
 <!-- Paste the last ~20 lines of relevant output, or link to a CI
@@ -48,6 +69,7 @@ artifact. Do not tick a box you did not actually run. -->
 - [ ] `make smoke` succeeds (clean local build + OSS-style up + health checks)
 - [ ] `pytest tests/` passes (run this if you touched `docker-compose.yml` or `tests/`)
 - [ ] Every new/changed test was watched to fail without the change and pass with it
+- [ ] Every new/changed code path was **executed on my machine**, not just unit-tested in isolation
 - [ ] Manual testing (describe):
 
 ## Quality Bar self-check

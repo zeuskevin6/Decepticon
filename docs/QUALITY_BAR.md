@@ -89,6 +89,108 @@ count.
 If you cannot fit your work under the cap, **the work is two PRs**.
 Split it. Land each piece independently, behind a flag if needed.
 
+
+## Wired end-to-end, locally verified — no exceptions
+
+**"Compiles" is not "works." "Tests pass" is not "wired." "CI is
+green" is not "I ran it."** Before you open the PR, every code path
+you touched has been **executed on your machine** at least once and
+produced the behavior you claim. There is no exception for "small
+changes," "obvious refactors," "docs-only" touching runtime code, or
+"the test suite covers it." If you did not run it, you do not know.
+
+### What "wired" means concretely
+
+1. **You executed the new or changed code path on your machine.** Not
+   imported. Not unit-tested in isolation. Actually called, in the
+   actual runtime, against the actual surrounding system. If your
+   change is in `packages/decepticon/decepticon/agents/`, you ran an
+   engagement that exercised the agent. If it is a CLI command, you
+   ran the command. If it is an HTTP route, you hit the route. If it
+   is a skill, you triggered the skill from an agent that loads it.
+2. **You followed the change through every layer it crosses.** A new
+   config flag means: you set it, watched the loader pick it up,
+   watched the consumer behave differently, and watched the *opposite*
+   value still work. A new function signature means: you ran every
+   updated caller, not just the one in the unit test. A new
+   `docker-compose.yml` field means: you ran `make dev` (or `docker
+   compose up`) and watched the stack come healthy with your change.
+3. **You verified the failure mode, not just the happy path.** Pass
+   bad input. Pass `None`. Pull the network. Confirm the failure
+   surfaces — not silently swallowed, not turned into a `None`
+   downstream. If you cannot describe what happens on failure, you
+   have not tested the change.
+4. **You ran the integration the change is part of.** If your PR
+   changes an OPPLAN tool, you ran the orchestrator and watched it
+   call the tool. If it changes a middleware, you ran an agent through
+   the middleware stack. Unit tests on the middleware in isolation
+   are necessary, not sufficient.
+5. **You ran `make smoke` (or the matching lane) for any change that
+   crosses the stack.** "CI will catch it" is not local verification.
+   CI is a backstop. A green CI run on a PR you have not exercised
+   locally is still rejected.
+6. **If you genuinely cannot run something locally** (no GPU, no AWS
+   account, the target requires a paid Sliver license, the C2 traffic
+   needs an external responder, etc.) — say so **explicitly** in the
+   PR body, name what you did instead (a focused mock, a stand-in
+   target, a recorded transcript), and label the unverified surface so
+   the reviewer knows where to look. Honest "I could not exercise X
+   end-to-end because Y; I verified Z instead" is acceptable.
+   Pretending you ran something you did not is not.
+
+### What "wired" forbids
+
+- Adding a new code path without a runtime exercise of it — even if a
+  unit test covers the function in isolation.
+- Adding a new config flag / env var / option without flipping it on
+  your machine and watching the behavior change.
+- Changing a public function signature without grep-confirming (or
+  LSP-confirming) every caller is updated and exercised.
+- Adding or removing a dependency without importing it under the
+  actual runtime path and watching it load.
+- Adding a new CLI command, HTTP route, agent prompt, or skill
+  without invoking it once.
+- Touching `docker-compose.yml`, `containers/*.Dockerfile`, or
+  `config/litellm.yaml` without bringing the stack up locally and
+  watching it pass healthchecks.
+- Saying "should work," "should be fine," "I think this is right," or
+  "this is straightforward" in a PR body, a commit message, or a
+  review comment. If it is true, prove it. If you cannot, do not
+  claim it.
+- "Verified in CI only" without an explicit reason you could not run
+  it locally. CI is necessary, not sufficient.
+
+### What "wired" requires in the PR body
+
+Every PR has a one-paragraph **End-to-end verification statement**
+naming the exact commands you ran and the exact behavior you
+observed. Examples that meet the bar:
+
+> Brought the stack up with `make dev`, ran `make cli`, executed an
+> engagement with `target=10.0.2.4` and `profile=AUTOBANK`. The new
+> `c2_tier=short_haul` field on `obj-002` propagated through to the
+> Sliver implant generation (verified via `sliver-client implants` —
+> output attached). Confirmed `c2_tier=long_haul` produces a DNS
+> implant on the same target. `make smoke` healthy on a clean
+> volume.
+
+> Ran `pytest packages/decepticon/tests/unit/middleware/test_safe_command.py::test_rejects_out_of_scope_host -x`
+> twice: once on the parent commit (failed as expected: the new
+> CIDR-overlap check did not exist), once on this branch (passed).
+> Also ran `make ci-lint` and the full `pytest tests/`. Did **not**
+> run `make smoke` because no compose change; declaring the gap so
+> the reviewer knows.
+
+Examples that **do not** meet the bar:
+
+> Tested locally.
+
+> All tests pass.
+
+> Should work.
+
+The bar is on the *evidence*, not the *claim*.
+
 ---
 
 ## Banned patterns — PR closed on sight
@@ -351,6 +453,9 @@ Before you request review, your honest answer to all of these is yes:
 - [ ] Every changed line is here because the stated intent required it.
 - [ ] I read the diff in full. I can defend every line on demand.
 - [ ] I ran the verification I claim to have run.
+- [ ] **I executed every new or changed code path on my own machine —
+  not just "tests pass." The PR body's End-to-end verification
+  statement names the commands I ran and the behavior I observed.**
 - [ ] No banned pattern is present.
 - [ ] No AI-slop signature is present.
 - [ ] If I were tired and reviewing this at the end of a long day, I

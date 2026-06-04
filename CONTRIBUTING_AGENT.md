@@ -102,6 +102,18 @@ without review, regardless of how green CI is.
     annotations including the return type, and every exception you
     raise is a named class.** `raise Exception("…")` is closed on
     sight; raise a domain-specific subclass.
+12. **Every new or changed code path is wired end-to-end and was
+    executed on your machine.** Not "compiles." Not "unit tests pass."
+    Not "CI will catch it." You ran the actual command, hit the actual
+    route, triggered the actual skill, brought the actual stack up, and
+    observed the actual behavior — happy path *and* failure path. The
+    PR body includes a one-paragraph **End-to-end verification
+    statement** naming the exact commands you ran and what you saw.
+    "Tested locally," "all tests pass," "should work" are not
+    verification statements; they are closure triggers. See
+    [QUALITY_BAR §Wired end-to-end](docs/QUALITY_BAR.md#wired-end-to-end-locally-verified--no-exceptions)
+    for what counts, what is forbidden, and how to declare an honest
+    gap when you genuinely cannot run something locally.
 
 If any of the above hits, stop. Open an issue or draft ADR first.
 
