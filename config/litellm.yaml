@@ -734,6 +734,11 @@ litellm_settings:
   #   - copilot      → copilot_handler.copilot_handler_instance
   #   - grok-sub     → grok_handler.grok_sub_handler_instance
   #   - pplx-sub     → perplexity_handler.perplexity_sub_handler_instance
+  num_retries: 3
+  retry_after: 30
+
+# --- Router Settings ---
+router_settings:
   # ── Within-provider tier degradation ───────────────────────────────
   # Each chain mirrors HIGH → MID → LOW for the same auth path. When a
   # primary model fails (rate limit, transient 5xx, request-validation
@@ -820,11 +825,6 @@ litellm_settings:
     - {"cfgateway/anthropic/claude-opus-4-6": ["cfgateway/anthropic/claude-sonnet-4-6"]}
     - {"cfgateway/anthropic/claude-sonnet-4-6": ["cfgateway/anthropic/claude-haiku-4-5"]}
     # Copilot, SuperGrok, Perplexity fallbacks (registered dynamically)
-  num_retries: 3
-  retry_after: 30
-
-# --- Router Settings ---
-router_settings:
   routing_strategy: simple-shuffle
   num_retries: 5
   timeout: 300
